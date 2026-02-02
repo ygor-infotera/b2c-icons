@@ -17,6 +17,7 @@ interface IconMetadata {
   isFlag: boolean;
   isFillable: boolean;
   svgContent: string;
+  viewBox: string;
 }
 
 /**
@@ -42,21 +43,92 @@ function toPascalCase(slug: string): string {
 }
 
 /**
- * Extract inner SVG content (remove <svg> wrapper)
+ * Extract viewBox from SVG
  */
-function extractInnerSVG(svg: string): string {
+function extractViewBox(svg: string): string {
+  const viewBoxMatch = svg.match(/viewBox\s*=\s*["']([^"']+)["']/);
+  return viewBoxMatch ? viewBoxMatch[1] : '0 0 24 24'; // Default to 24x24
+}
+
+/**
+ * Detect if SVG is multi-color (has white/black for contrast + other colors)
+ * These icons need to preserve their colors like flags
+ */
+function isMultiColorIcon(svgContent: string): boolean {
+  // Check for white stroke (common in counter badges)
+  const hasWhiteStroke = /stroke\s*=\s*["'](?:white|#fff|#ffffff)["']/i.test(svgContent);
+
+  // Check for other colors (not white, black, or none)
+  const hasOtherColors = /(?:fill|stroke)\s*=\s*["'](?!none|white|#fff|#ffffff|black|#000|#000000)([^"']+)["']/i.test(svgContent);
+
+  // Multi-color if it has both white strokes and other colors
+  return hasWhiteStroke && hasOtherColors;
+}
+
+/**
+ * Extract inner SVG content (remove <svg> wrapper)
+ * Also strip fill and stroke attributes to allow wrapper control (except for flags and multi-color icons)
+ */
+function extractInnerSVG(svg: string, preserveColors: boolean = false, isMultiColor: boolean = false): string {
   // Match the content between <svg> tags
   const match = svg.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
   if (!match) {
     return svg;
   }
-  return match[1].trim();
+
+  let innerContent = match[1].trim();
+
+  // For flags, preserve colors exactly as-is
+  if (preserveColors && !isMultiColor) {
+    return innerContent;
+  }
+
+  // For multi-color icons, replace colors with tokens for customization
+  if (isMultiColor) {
+    // Replace white/fff with secondary color token
+    innerContent = innerContent
+      .replace(/fill="#fff(?:fff)?"/g, 'fill="{{SECONDARY_COLOR}}"')
+      .replace(/fill="white"/g, 'fill="{{SECONDARY_COLOR}}"')
+      .replace(/stroke="#fff(?:fff)?"/g, 'stroke="{{SECONDARY_COLOR}}"')
+      .replace(/stroke="white"/g, 'stroke="{{SECONDARY_COLOR}}"');
+
+    // Replace other colors (not white/black) with primary color token
+    innerContent = innerContent
+      .replace(/fill="#([0-9a-fA-F]{3,6})"/g, (match, hex) => {
+        if (hex.toLowerCase() === 'fff' || hex.toLowerCase() === 'ffffff') return match;
+        if (hex.toLowerCase() === '000' || hex.toLowerCase() === '000000') return match;
+        return 'fill="{{PRIMARY_COLOR}}"';
+      })
+      .replace(/stroke="#([0-9a-fA-F]{3,6})"/g, (match, hex) => {
+        if (hex.toLowerCase() === 'fff' || hex.toLowerCase() === 'ffffff') return match;
+        if (hex.toLowerCase() === '000' || hex.toLowerCase() === '000000') return match;
+        return 'stroke="{{PRIMARY_COLOR}}"';
+      });
+
+    return innerContent;
+  }
+
+  // For regular icons, strip fill and stroke color attributes to allow wrapper SVG to control them
+  // Keep fill-rule, fill-opacity, stroke-linecap, stroke-linejoin, etc. as they're structural
+  innerContent = innerContent
+    .replace(/\s*fill="(?!none)[^"]*"/g, '')           // Remove fill="#fff" etc, keep fill="none"
+    .replace(/\s*stroke="(?!none)[^"]*"/g, '')         // Remove stroke="#000" etc, keep stroke="none"
+    .replace(/\s*stroke-width="[^"]*"/g, '');          // Remove stroke-width="2" etc
+
+  return innerContent;
 }
 
 /**
  * Detect if SVG uses fill colors (not just stroke)
+ * Most icons with fill attributes should be fillable
+ * Flags should preserve their multi-color nature
  */
-function detectFillable(svgContent: string): boolean {
+function detectFillable(svgContent: string, isFlag: boolean): boolean {
+  // Flags should preserve colors, so they're fillable but handled specially
+  if (isFlag) {
+    return true;
+  }
+
   // Check if SVG has fill attributes with actual colors (not "none")
   const hasFillColor = /fill\s*=\s*["'](?!none)([^"']+)["']/i.test(svgContent);
 
@@ -72,13 +144,14 @@ function detectFillable(svgContent: string): boolean {
 function generateComponentCode(
   componentName: string,
   svgContent: string,
-  fillable: boolean
+  fillable: boolean,
+  viewBox: string
 ): string {
   return `import { createIcon } from '../Icon';
 
 const svgContent = \`${svgContent}\`;
 
-export const ${componentName} = createIcon('${componentName}', svgContent, ${fillable});
+export const ${componentName} = createIcon('${componentName}', svgContent, ${fillable}, '${viewBox}');
 `;
 }
 
@@ -91,7 +164,8 @@ function generateIndexFile(metadata: IconMetadata[]): string {
     .join('\n');
 
   return `// Auto-generated file - do not edit manually
-export { IconProps, createIcon } from './Icon';
+export type { IconProps } from './Icon';
+export { createIcon } from './Icon';
 
 ${exports}
 `;
@@ -119,6 +193,12 @@ async function generateReactIcons() {
     const filePath = path.join(ICON_DIR, icon);
     const svgContent = fs.readFileSync(filePath, 'utf-8');
 
+    // Generate component metadata (determine isFlag first)
+    const iconName = path.basename(icon, '.svg');
+    const slug = slugify(iconName);
+    const componentName = toPascalCase(slug);
+    const isFlag = slug.startsWith('flag-');
+
     // Optimize SVG with SVGO
     let optimizedContent = svgContent;
     try {
@@ -131,15 +211,16 @@ async function generateReactIcons() {
       console.warn(`⚠️  SVGO optimization failed for ${icon}, using original`);
     }
 
-    // Extract inner SVG content
-    const innerContent = extractInnerSVG(optimizedContent);
+    // Check if this is a multi-color icon (like counter badges)
+    const isMultiColor = isMultiColorIcon(svgContent);
 
-    // Generate component metadata
-    const iconName = path.basename(icon, '.svg');
-    const slug = slugify(iconName);
-    const componentName = toPascalCase(slug);
-    const isFlag = slug.startsWith('flag-');
-    const isFillable = detectFillable(svgContent);
+    // Extract viewBox and inner SVG content
+    const viewBox = extractViewBox(optimizedContent);
+    // Preserve colors for flags and multi-color icons
+    const preserveColors = isFlag || isMultiColor;
+    const innerContent = extractInnerSVG(optimizedContent, preserveColors, isMultiColor);
+
+    const isFillable = detectFillable(svgContent, isFlag);
 
     iconMetadata.push({
       componentName,
@@ -148,10 +229,11 @@ async function generateReactIcons() {
       isFlag,
       isFillable,
       svgContent: innerContent,
+      viewBox,
     });
 
     // Generate component file
-    const componentCode = generateComponentCode(componentName, innerContent, isFillable);
+    const componentCode = generateComponentCode(componentName, innerContent, isFillable, viewBox);
 
     // Format with prettier
     let formattedCode = componentCode;
@@ -169,7 +251,8 @@ async function generateReactIcons() {
     const componentPath = path.join(OUTPUT_DIR, `${componentName}.tsx`);
     fs.writeFileSync(componentPath, formattedCode);
 
-    console.log(`✅ Generated ${componentName}.tsx ${isFlag ? '(flag)' : ''} ${isFillable ? '(fillable)' : '(stroke)'}`);
+    const typeLabel = isFlag ? '(flag)' : isMultiColor ? '(multi-color)' : isFillable ? '(fillable)' : '(stroke)';
+    console.log(`✅ Generated ${componentName}.tsx ${typeLabel}`);
   }
 
   console.log(`\n📝 Generating index.ts...\n`);

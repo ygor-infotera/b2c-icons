@@ -3,6 +3,8 @@ import React, { forwardRef } from 'react';
 export interface IconProps extends React.SVGAttributes<SVGElement> {
   size?: number | string;
   color?: string;
+  secondaryColor?: string;
+  tertiaryColor?: string;
   strokeWidth?: number | string;
   fill?: string;
   className?: string;
@@ -12,13 +14,16 @@ export interface IconProps extends React.SVGAttributes<SVGElement> {
 export const createIcon = (
   displayName: string,
   svgContent: string,
-  defaultFillable: boolean = false
+  defaultFillable: boolean = false,
+  viewBox: string = '0 0 24 24'
 ) => {
   const IconComponent = forwardRef<SVGSVGElement, IconProps>(
     (
       {
         size = 24,
         color,
+        secondaryColor,
+        tertiaryColor,
         strokeWidth = 2,
         fill,
         className = '',
@@ -28,9 +33,30 @@ export const createIcon = (
       ref
     ) => {
       const finalSize = typeof size === 'number' ? `${size}px` : size;
-      const finalFill = fill || (defaultFillable ? 'currentColor' : 'none');
       const finalColor = color || 'currentColor';
+      const finalSecondaryColor = secondaryColor || 'white';
+      const finalTertiaryColor = tertiaryColor || 'currentColor';
       const finalStrokeWidth = typeof strokeWidth === 'number' ? strokeWidth : parseFloat(strokeWidth as string) || 2;
+
+      // Replace color tokens in multi-color icons
+      let processedContent = svgContent;
+      if (svgContent.includes('{{PRIMARY_COLOR}}')) {
+        processedContent = processedContent
+          .replace(/\{\{PRIMARY_COLOR\}\}/g, finalColor)
+          .replace(/\{\{SECONDARY_COLOR\}\}/g, finalSecondaryColor)
+          .replace(/\{\{TERTIARY_COLOR\}\}/g, finalTertiaryColor);
+      }
+
+      // Fillable icons (solid shapes) use fill, stroke-based icons use stroke
+      const finalFill = fill !== undefined
+        ? fill
+        : defaultFillable
+          ? finalColor  // Use color prop as fill for fillable icons
+          : 'none';
+
+      const finalStroke = defaultFillable
+        ? 'none'       // Fillable icons don't need stroke
+        : finalColor;  // Stroke-based icons use color as stroke
 
       return (
         <svg
@@ -38,9 +64,9 @@ export const createIcon = (
           xmlns="http://www.w3.org/2000/svg"
           width={finalSize}
           height={finalSize}
-          viewBox="0 0 24 24"
+          viewBox={viewBox}
           fill={finalFill}
-          stroke={finalColor}
+          stroke={finalStroke}
           strokeWidth={finalStrokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -48,7 +74,7 @@ export const createIcon = (
           aria-label={ariaLabel}
           aria-hidden={!ariaLabel}
           {...props}
-          dangerouslySetInnerHTML={{ __html: svgContent }}
+          dangerouslySetInnerHTML={{ __html: processedContent }}
         />
       );
     }
