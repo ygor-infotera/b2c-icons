@@ -24,3 +24,8 @@ tsconfig.tsbuildinfo
 .env
 .env.local
 .env.*.local
+
+# Generated files
+dist/
+src/icons/
+src/index.ts

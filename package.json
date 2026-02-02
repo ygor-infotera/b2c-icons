@@ -1,19 +1,56 @@
 {
   "name": "infotravel-icons",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "Icon library for Infotravel projects with CSS and React support",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./css": "./dist/infotravel-icons.css"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "ts-node scripts/generate-icons.ts"
+    "build": "pnpm build:css && pnpm build:react",
+    "build:css": "ts-node scripts/generate-icons.ts",
+    "build:react": "ts-node scripts/generate-react-icons.ts && tsup",
+    "prepublishOnly": "pnpm build"
   },
-  "keywords": [],
+  "keywords": [
+    "icons",
+    "react",
+    "svg",
+    "infotravel",
+    "react-icons",
+    "tree-shakable"
+  ],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.19.0",
+  "peerDependencies": {
+    "react": "^16.8.0 || ^17.0.0 || ^18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^25.0.9",
+    "@types/react": "^19.2.10",
+    "prettier": "^3.8.1",
+    "svgo": "^4.0.0",
     "ts-node": "^10.9.2",
+    "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   }
 }
