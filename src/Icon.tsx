@@ -47,7 +47,9 @@ export const createIcon = (
           .replace(/\{\{TERTIARY_COLOR\}\}/g, finalTertiaryColor);
       }
 
-      // Fillable icons (solid shapes) use fill, stroke-based icons use stroke
+      // Handle fill and stroke for different icon types
+      // Fillable icons may also need stroke (hybrid icons with both fill and stroke)
+      // So we set both to finalColor and let individual paths control via explicit attributes
       const finalFill = fill !== undefined
         ? fill
         : defaultFillable
@@ -55,7 +57,7 @@ export const createIcon = (
           : 'none';
 
       const finalStroke = defaultFillable
-        ? 'none'       // Fillable icons don't need stroke
+        ? finalColor   // Fillable icons can have strokes too (for hybrid icons)
         : finalColor;  // Stroke-based icons use color as stroke
 
       return (

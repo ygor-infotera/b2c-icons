@@ -108,8 +108,27 @@ function extractInnerSVG(svg: string, preserveColors: boolean = false, isMultiCo
     return innerContent;
   }
 
-  // For regular icons, strip fill and stroke color attributes to allow wrapper SVG to control them
-  // Keep fill-rule, fill-opacity, stroke-linecap, stroke-linejoin, etc. as they're structural
+  // For regular icons, we need to handle hybrid icons (icons with both fill and stroke paths)
+  // Strategy: Add explicit fill="none" or stroke="none" to disambiguate paths, then strip colors
+
+  // Parse paths and add explicit none attributes for hybrid icons
+  innerContent = innerContent.replace(/<path([^>]*?)(\/?)>/g, (match, attrs, selfClosing) => {
+    const hasFill = /fill="(?!none)[^"]*"/.test(attrs);
+    const hasStroke = /stroke="(?!none)[^"]*"/.test(attrs);
+
+    // If path has only stroke (no fill), add explicit fill="none"
+    if (hasStroke && !hasFill && !/fill="none"/.test(attrs)) {
+      attrs = attrs + ' fill="none"';
+    }
+    // If path has only fill (no stroke), add explicit stroke="none"
+    else if (hasFill && !hasStroke && !/stroke="none"/.test(attrs)) {
+      attrs = attrs + ' stroke="none"';
+    }
+
+    return `<path${attrs}${selfClosing}>`;
+  });
+
+  // Now strip color values, keeping fill="none" and stroke="none"
   innerContent = innerContent
     .replace(/\s*fill="(?!none)[^"]*"/g, '')           // Remove fill="#fff" etc, keep fill="none"
     .replace(/\s*stroke="(?!none)[^"]*"/g, '')         // Remove stroke="#000" etc, keep stroke="none"
