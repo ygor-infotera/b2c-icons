@@ -133,7 +133,13 @@ const iconRef = useRef<SVGSVGElement>(null);
 - `Currency` (Currency)
 - `Show` (Show)
 
-Preview all icons by opening `dist/infotravel-icons.html` after building.
+Preview all icons by opening `dist/infotravel-icons.html` (CSS version) or by running the interactive React gallery:
+
+```bash
+pnpm preview
+```
+
+The React preview allows you to search icons, customize colors/sizes, and copy component code directly.
 
 ## Tree-Shaking
 
