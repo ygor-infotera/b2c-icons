@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 
+.npmrc
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

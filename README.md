@@ -32,36 +32,36 @@ Note: React is an optional peer dependency. If you only use CSS, React is not re
 Import and use icons as React components with full customization:
 
 ```tsx
-import { Notificacoes, FlagBrazil, Idioma } from "infotravel-icons";
+import { Notifications, FlagBrazil, Language } from "infotravel-icons";
 
 function App() {
   return (
     <div>
       {/* Basic usage */}
-      <Notificacoes />
+      <Notifications />
 
       {/* Custom size */}
-      <Notificacoes size={32} />
-      <Notificacoes size="2rem" />
+      <Notifications size={32} />
+      <Notifications size="2rem" />
 
       {/* Custom color */}
-      <Notificacoes color="#FF6B6B" />
-      <Notificacoes color="currentColor" />
+      <Notifications color="#FF6B6B" />
+      <Notifications color="currentColor" />
 
       {/* Custom stroke width */}
-      <Notificacoes strokeWidth={3} />
+      <Notifications strokeWidth={3} />
 
       {/* With className for additional styling */}
-      <Idioma className="my-icon" />
+      <Language className="my-icon" />
 
       {/* Flags maintain their original colors */}
       <FlagBrazil size={48} />
 
       {/* Accessibility */}
-      <Notificacoes aria-label="Notifications" />
+      <Notifications aria-label="Notifications" />
 
       {/* All SVG props are supported */}
-      <Notificacoes
+      <Notifications
         onClick={() => alert("Clicked!")}
         style={{ cursor: "pointer" }}
       />
@@ -82,7 +82,7 @@ For backward compatibility, CSS classes are still available:
 />
 
 <!-- Use with class names -->
-<i class="icone-notificacoes" style="color: blue;"></i>
+<i class="icone-notifications" style="color: blue;"></i>
 <i class="icone-flag-brazil"></i>
 ```
 
@@ -106,7 +106,7 @@ All components support ref forwarding:
 
 ```tsx
 const iconRef = useRef<SVGSVGElement>(null);
-<Notificacoes ref={iconRef} />;
+<Notifications ref={iconRef} />;
 ```
 
 ## Available Icons
@@ -115,9 +115,9 @@ const iconRef = useRef<SVGSVGElement>(null);
 
 **Baggage Icons (with counters):**
 
-- `BagegemDeCabineCouter0` through `BagegemDeCabineCouter4`
-- `ItemPessoalCounter0` through `ItemPessoalCounter4`
-- `MalaDespachadaCouter0` through `MalaDespachadaCouter4`
+- `CabinBagCounter0` through `CabinBagCounter4`
+- `PersonalItemCounter0` through `PersonalItemCounter4`
+- `CheckedBagCounter0` through `CheckedBagCounter4`
 
 **Flags:**
 
@@ -127,11 +127,11 @@ const iconRef = useRef<SVGSVGElement>(null);
 
 **UI Icons:**
 
-- `Notificacoes` (Notifications)
-- `Idioma` (Language)
-- `Contraste` (Contrast)
-- `Moeda` (Currency)
-- `Mostrar` (Show)
+- `Notifications` (Notifications)
+- `Language` (Language)
+- `Contrast` (Contrast)
+- `Currency` (Currency)
+- `Show` (Show)
 
 Preview all icons by opening `dist/infotravel-icons.html` after building.
 
@@ -140,8 +140,8 @@ Preview all icons by opening `dist/infotravel-icons.html` after building.
 This library is fully tree-shakable. Import only the icons you need:
 
 ```tsx
-// ✅ Good: Only Notificacoes is included in bundle (~1.5KB)
-import { Notificacoes } from "infotravel-icons";
+// ✅ Good: Only Notifications is included in bundle (~1.5KB)
+import { Notifications } from "infotravel-icons";
 
 // ❌ Avoid: Imports everything
 import * as Icons from "infotravel-icons";
@@ -200,7 +200,7 @@ import { NewIcon } from "infotravel-icons";
 ### Icon Naming Convention
 
 - Filenames are automatically converted to PascalCase component names
-- `notificacoes.svg` → `Notificacoes`
+- `notifications.svg` → `Notifications`
 - `flag-brazil.svg` → `FlagBrazil`
 - Accents are removed, special characters become hyphens
 - Files starting with `flag-` are treated as multi-color icons
@@ -230,7 +230,7 @@ infotravel-icons/
 ```html
 <!-- v1.x (still works in v2.x) -->
 <link rel="stylesheet" href="path/to/infotravel-icons.css" />
-<i class="icone-notificacoes"></i>
+<i class="icone-notifications"></i>
 ```
 
 ### To use React components (new in v2.x):
@@ -240,8 +240,8 @@ infotravel-icons/
 npm install react
 
 // Import and use components
-import { Notificacoes } from 'infotravel-icons';
-<Notificacoes size={24} color="blue" />
+import { Notifications } from 'infotravel-icons';
+<Notifications size={24} color="blue" />
 ```
 
 ## TypeScript
@@ -249,9 +249,9 @@ import { Notificacoes } from 'infotravel-icons';
 Full TypeScript support is included. All components are typed with `IconProps`:
 
 ```tsx
-import { Notificacoes, IconProps } from "infotravel-icons";
+import { Notifications, IconProps } from "infotravel-icons";
 
-const MyIcon = (props: IconProps) => <Notificacoes {...props} />;
+const MyIcon = (props: IconProps) => <Notifications {...props} />;
 ```
 
 ## License
