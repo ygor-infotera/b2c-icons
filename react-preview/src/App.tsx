@@ -9,7 +9,6 @@ function App() {
   const [search, setSearch] = useState("");
   const [size, setSize] = useState(32);
   const [color, setColor] = useState("#60a5fa");
-  const [strokeWidth, setStrokeWidth] = useState(2);
   const [showToast, setShowToast] = useState(false);
   const [copiedName, setCopiedName] = useState("");
 
@@ -34,7 +33,7 @@ function App() {
   }, [allIcons, search]);
 
   const copyToClipboard = (name: string) => {
-    const text = `<${name} size={${size}} color="${color}" strokeWidth={${strokeWidth}} />`;
+    const text = `<${name} size={${size}} color="${color}" />`;
     navigator.clipboard.writeText(text);
     setCopiedName(name);
     setShowToast(true);
@@ -57,7 +56,6 @@ function App() {
             <Component
               size={size}
               color={name.includes("Flag") ? undefined : color}
-              strokeWidth={strokeWidth}
             />,
           );
 
@@ -80,7 +78,6 @@ function App() {
             <Component
               size={size}
               color={name.includes("Flag") ? undefined : color}
-              strokeWidth={strokeWidth}
             />,
           );
           zip.file(`${name}.svg`, svgString);
@@ -140,19 +137,6 @@ function App() {
         </div>
 
         <div className="control-group">
-          <label>Stroke: {strokeWidth}</label>
-          <input
-            type="range"
-            min="0.5"
-            max="4"
-            step="0.5"
-            value={strokeWidth}
-            onChange={(e) => setStrokeWidth(Number(e.target.value))}
-            className="range-input"
-          />
-        </div>
-
-        <div className="control-group">
           <label>Actions</label>
           <button onClick={handleExport} className="export-button">
             Export SVGs
@@ -172,7 +156,6 @@ function App() {
               <Component
                 size={size}
                 color={name.includes("Flag") ? undefined : color}
-                strokeWidth={strokeWidth}
               />
             </div>
             <div className="icon-name">{name}</div>

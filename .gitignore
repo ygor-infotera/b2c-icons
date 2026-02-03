@@ -31,4 +31,5 @@ tsconfig.tsbuildinfo
 dist/
 src/icons/
 broken-icons/
+broken-icons.zip
 src/index.ts
