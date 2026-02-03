@@ -30,4 +30,5 @@ tsconfig.tsbuildinfo
 # Generated files
 dist/
 src/icons/
+broken-icons/
 src/index.ts

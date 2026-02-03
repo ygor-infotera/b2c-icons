@@ -51,25 +51,31 @@ function extractViewBox(svg: string): string {
 }
 
 /**
- * Detect if SVG is multi-color (has white/black for contrast + other colors)
- * These icons need to preserve their colors like flags
+ * Detect if SVG is multi-color (needs to preserve its original colors)
+ * These icons have specific colors that shouldn't be replaced with the color prop
  */
 function isMultiColorIcon(svgContent: string): boolean {
-  // Check for white stroke (common in counter badges)
-  const hasWhiteStroke = /stroke\s*=\s*["'](?:white|#fff|#ffffff)["']/i.test(svgContent);
+  // Remove <defs> sections as they contain technical elements (clipPaths, masks) not visible colors
+  const contentWithoutDefs = svgContent.replace(/<defs>[\s\S]*?<\/defs>/gi, '');
 
-  // Check for other colors (not white, black, or none)
-  const hasOtherColors = /(?:fill|stroke)\s*=\s*["'](?!none|white|#fff|#ffffff|black|#000|#000000)([^"']+)["']/i.test(svgContent);
+  // Check for white fill or stroke (common for backgrounds and contrast elements)
+  const hasWhite = /(?:fill|stroke)\s*=\s*["'](?:white|#fff|#ffffff)["']/i.test(contentWithoutDefs);
 
-  // Multi-color if it has both white strokes and other colors
-  return hasWhiteStroke && hasOtherColors;
+  // Check for non-black/white colors (brand colors, grays, etc.)
+  // This regex matches hex colors that are NOT black (#000) or white (#fff)
+  const hasOtherColors = /(?:fill|stroke)\s*=\s*["']#(?!000000|000|fff|ffffff)[0-9a-fA-F]{3,6}["']/i.test(contentWithoutDefs);
+
+  // Multi-color if it has:
+  // 1. White AND any other color (including black) - for contrast icons
+  // 2. OR any non-black/white color - for brand/specific color icons
+  return (hasWhite && /(?:fill|stroke)\s*=\s*["'](?!none)[^"']+["']/i.test(contentWithoutDefs)) || hasOtherColors;
 }
 
 /**
  * Extract inner SVG content (remove <svg> wrapper)
- * Also strip fill and stroke attributes to allow wrapper control (except for flags and multi-color icons)
+ * Also strip fill and stroke attributes to allow wrapper control (except for flags, multi-color icons, and filled icons)
  */
-function extractInnerSVG(svg: string, preserveColors: boolean = false, isMultiColor: boolean = false): string {
+function extractInnerSVG(svg: string, preserveColors: boolean = false, isMultiColor: boolean = false, isFilled: boolean = false): string {
   // Match the content between <svg> tags
   const match = svg.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
   if (!match) {
@@ -78,32 +84,80 @@ function extractInnerSVG(svg: string, preserveColors: boolean = false, isMultiCo
 
   let innerContent = match[1].trim();
 
-  // For flags, preserve colors exactly as-is
+  // For flags, preserve colors exactly as-is but add stroke="none" to prevent parent stroke inheritance
   if (preserveColors && !isMultiColor) {
+    // Add stroke="none" to all paths/shapes that don't have a stroke attribute
+    innerContent = innerContent.replace(/<(path|circle|rect|ellipse|polygon)([^>]*?)(\/?)>/g, (match, tag, attrs, selfClosing) => {
+      // If no stroke attribute, add stroke="none" to prevent inheritance
+      if (!/stroke\s*=/.test(attrs)) {
+        attrs = attrs + ' stroke="none"';
+      }
+      return `<${tag}${attrs}${selfClosing}>`;
+    });
     return innerContent;
   }
 
-  // For multi-color icons, replace colors with tokens for customization
+  // For multi-color icons, handle based on whether they have brand colors or just black+white contrast
   if (isMultiColor) {
-    // Replace white/fff with secondary color token
-    innerContent = innerContent
-      .replace(/fill="#fff(?:fff)?"/g, 'fill="{{SECONDARY_COLOR}}"')
-      .replace(/fill="white"/g, 'fill="{{SECONDARY_COLOR}}"')
-      .replace(/stroke="#fff(?:fff)?"/g, 'stroke="{{SECONDARY_COLOR}}"')
-      .replace(/stroke="white"/g, 'stroke="{{SECONDARY_COLOR}}"');
+    // Remove <defs> for color analysis
+    const contentForAnalysis = innerContent.replace(/<defs>[\s\S]*?<\/defs>/gi, '');
 
-    // Replace other colors (not white/black) with primary color token
-    innerContent = innerContent
-      .replace(/fill="#([0-9a-fA-F]{3,6})"/g, (match, hex) => {
-        if (hex.toLowerCase() === 'fff' || hex.toLowerCase() === 'ffffff') return match;
-        if (hex.toLowerCase() === '000' || hex.toLowerCase() === '000000') return match;
-        return 'fill="{{PRIMARY_COLOR}}"';
-      })
-      .replace(/stroke="#([0-9a-fA-F]{3,6})"/g, (match, hex) => {
-        if (hex.toLowerCase() === 'fff' || hex.toLowerCase() === 'ffffff') return match;
-        if (hex.toLowerCase() === '000' || hex.toLowerCase() === '000000') return match;
-        return 'stroke="{{PRIMARY_COLOR}}"';
+    // Check if icon has non-black/white colors (brand colors like grays, blues, etc.)
+    const hasBrandColors = /(?:fill|stroke)\s*=\s*["']#(?!000000|000|fff|ffffff)[0-9a-fA-F]{3,6}["']/i.test(contentForAnalysis);
+
+    if (hasBrandColors) {
+      // Brand icons: preserve ALL colors exactly, add stroke="none" to fill-only paths
+      innerContent = innerContent.replace(/<(path|circle|rect|ellipse|polygon)([^>]*?)(\/?)>/g, (match, tag, attrs, selfClosing) => {
+        const hasStroke = /stroke\s*=/.test(attrs);
+        const hasFill = /fill\s*=/.test(attrs);
+        // If has fill but no stroke, add stroke="none" to prevent inheritance
+        if (hasFill && !hasStroke) {
+          attrs = attrs + ' stroke="none"';
+        }
+        return `<${tag}${attrs}${selfClosing}>`;
       });
+      return innerContent;
+    }
+
+    // Contrast icons (only black + white): Replace with tokens so they respond to color prop
+    // Black → PRIMARY_COLOR, White → SECONDARY_COLOR
+    innerContent = innerContent
+      .replace(/fill="#fff(?:fff)?"/gi, 'fill="{{SECONDARY_COLOR}}"')
+      .replace(/fill="white"/gi, 'fill="{{SECONDARY_COLOR}}"')
+      .replace(/stroke="#fff(?:fff)?"/gi, 'stroke="{{SECONDARY_COLOR}}"')
+      .replace(/stroke="white"/gi, 'stroke="{{SECONDARY_COLOR}}"')
+      .replace(/fill="#000(?:000)?"/gi, 'fill="{{PRIMARY_COLOR}}"')
+      .replace(/fill="black"/gi, 'fill="{{PRIMARY_COLOR}}"')
+      .replace(/stroke="#000(?:000)?"/gi, 'stroke="{{PRIMARY_COLOR}}"')
+      .replace(/stroke="black"/gi, 'stroke="{{PRIMARY_COLOR}}"');
+
+    return innerContent;
+  }
+
+  // For "filled" icons, keep explicit fill and stroke attributes but strip colors
+  // This preserves which paths should be filled vs stroked
+  if (isFilled) {
+    // Parse paths and circles to add explicit none attributes for hybrid rendering
+    innerContent = innerContent.replace(/<(path|circle)([^>]*?)(\/?)>/g, (match, tag, attrs, selfClosing) => {
+      const hasFill = /fill="(?!none)[^"]*"/.test(attrs);
+      const hasStroke = /stroke="(?!none)[^"]*"/.test(attrs);
+
+      // If element has only stroke (no fill), add explicit fill="none"
+      if (hasStroke && !hasFill && !/fill="none"/.test(attrs)) {
+        attrs = attrs + ' fill="none"';
+      }
+      // If element has only fill (no stroke), add explicit stroke="none"
+      else if (hasFill && !hasStroke && !/stroke="none"/.test(attrs)) {
+        attrs = attrs + ' stroke="none"';
+      }
+
+      return `<${tag}${attrs}${selfClosing}>`;
+    });
+
+    // Strip color values but KEEP fill="none" and stroke="none"
+    innerContent = innerContent
+      .replace(/\s*fill="(?!none)[^"]*"/g, '')
+      .replace(/\s*stroke="(?!none)[^"]*"/g, '');
 
     return innerContent;
   }
@@ -141,10 +195,17 @@ function extractInnerSVG(svg: string, preserveColors: boolean = false, isMultiCo
  * Detect if SVG uses fill colors (not just stroke)
  * Most icons with fill attributes should be fillable
  * Flags should preserve their multi-color nature
+ * Filled icons (with "filled" in name) ARE fillable - they're hybrid icons needing both fill and stroke
  */
-function detectFillable(svgContent: string, isFlag: boolean): boolean {
+function detectFillable(svgContent: string, isFlag: boolean, isFilled: boolean): boolean {
   // Flags should preserve colors, so they're fillable but handled specially
   if (isFlag) {
+    return true;
+  }
+
+  // "Filled" icons ARE fillable - they're hybrid icons that need both fill and stroke set to color
+  // This allows paths with fill="none" to use stroke, and paths with stroke="none" to use fill
+  if (isFilled) {
     return true;
   }
 
@@ -233,13 +294,16 @@ async function generateReactIcons() {
     // Check if this is a multi-color icon (like counter badges)
     const isMultiColor = isMultiColorIcon(svgContent);
 
+    // Check if this is a "filled" icon (icons with "filled" in the name)
+    const isFilled = slug.includes('-filled') && !isFlag && !isMultiColor;
+
     // Extract viewBox and inner SVG content
     const viewBox = extractViewBox(optimizedContent);
     // Preserve colors for flags and multi-color icons
     const preserveColors = isFlag || isMultiColor;
-    const innerContent = extractInnerSVG(optimizedContent, preserveColors, isMultiColor);
+    const innerContent = extractInnerSVG(optimizedContent, preserveColors, isMultiColor, isFilled);
 
-    const isFillable = detectFillable(svgContent, isFlag);
+    const isFillable = detectFillable(svgContent, isFlag, isFilled);
 
     iconMetadata.push({
       componentName,
@@ -270,7 +334,7 @@ async function generateReactIcons() {
     const componentPath = path.join(OUTPUT_DIR, `${componentName}.tsx`);
     fs.writeFileSync(componentPath, formattedCode);
 
-    const typeLabel = isFlag ? '(flag)' : isMultiColor ? '(multi-color)' : isFillable ? '(fillable)' : '(stroke)';
+    const typeLabel = isFlag ? '(flag)' : isMultiColor ? '(multi-color)' : isFilled ? '(filled)' : isFillable ? '(fillable)' : '(stroke)';
     console.log(`✅ Generated ${componentName}.tsx ${typeLabel}`);
   }
 

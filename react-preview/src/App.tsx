@@ -1,5 +1,8 @@
+import { saveAs } from "file-saver";
 import * as Icons from "infotravel-icons";
+import JSZip from "jszip";
 import { useMemo, useState } from "react";
+import ReactDOMServer from "react-dom/server";
 import "./App.css";
 
 function App() {
@@ -36,6 +39,63 @@ function App() {
     setCopiedName(name);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 2000);
+  };
+
+  const handleExport = async () => {
+    try {
+      // @ts-expect-error - File System Access API not available in all browsers
+      const showDirectoryPicker = window.showDirectoryPicker;
+
+      if (typeof showDirectoryPicker === "function") {
+        // Use File System Access API
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dirHandle = await (window as any).showDirectoryPicker();
+
+        let count = 0;
+        for (const { name, Component } of filteredIcons) {
+          const svgString = ReactDOMServer.renderToStaticMarkup(
+            <Component
+              size={size}
+              color={name.includes("Flag") ? undefined : color}
+              strokeWidth={strokeWidth}
+            />,
+          );
+
+          const fileHandle = await dirHandle.getFileHandle(`${name}.svg`, {
+            create: true,
+          });
+          const writable = await fileHandle.createWritable();
+          await writable.write(svgString);
+          await writable.close();
+          count++;
+        }
+
+        alert(`Exported ${count} icons to ${dirHandle.name}!`);
+      } else {
+        // Fallback: Use JSZip
+        const zip = new JSZip();
+
+        filteredIcons.forEach(({ name, Component }) => {
+          const svgString = ReactDOMServer.renderToStaticMarkup(
+            <Component
+              size={size}
+              color={name.includes("Flag") ? undefined : color}
+              strokeWidth={strokeWidth}
+            />,
+          );
+          zip.file(`${name}.svg`, svgString);
+        });
+
+        const content = await zip.generateAsync({ type: "blob" });
+        saveAs(content, "icons.zip");
+        alert(`Exported ${filteredIcons.length} icons to icons.zip!`);
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        console.error(err);
+        alert("Failed to export icons. See console for details.");
+      }
+    }
   };
 
   return (
@@ -90,6 +150,13 @@ function App() {
             onChange={(e) => setStrokeWidth(Number(e.target.value))}
             className="range-input"
           />
+        </div>
+
+        <div className="control-group">
+          <label>Actions</label>
+          <button onClick={handleExport} className="export-button">
+            Export SVGs
+          </button>
         </div>
       </div>
 

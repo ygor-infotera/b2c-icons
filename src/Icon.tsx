@@ -24,7 +24,7 @@ export const createIcon = (
         color,
         secondaryColor,
         tertiaryColor,
-        strokeWidth = 2,
+        strokeWidth = 1,
         fill,
         className = '',
         'aria-label': ariaLabel,
