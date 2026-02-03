@@ -12,6 +12,8 @@ function App() {
   const [showToast, setShowToast] = useState(false);
   const [copiedName, setCopiedName] = useState("");
 
+  const [selectedIcons, setSelectedIcons] = useState<Set<string>>(new Set());
+
   const allIcons = useMemo(() => {
     return Object.entries(Icons)
       .filter(([name]) => name !== "createIcon" && name !== "IconProps")
@@ -32,7 +34,27 @@ function App() {
     );
   }, [allIcons, search]);
 
-  const copyToClipboard = (name: string) => {
+  const iconsToExport = useMemo(() => {
+    if (selectedIcons.size === 0) return filteredIcons;
+    return allIcons.filter((icon) => selectedIcons.has(icon.name));
+  }, [allIcons, filteredIcons, selectedIcons]);
+
+  const toggleSelection = (name: string) => {
+    setSelectedIcons((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIcons(new Set());
+
+  const copyToClipboard = (name: string, event?: React.MouseEvent) => {
+    if (event) event.stopPropagation();
     const text = `<${name} size={${size}} color="${color}" />`;
     navigator.clipboard.writeText(text);
     setCopiedName(name);
@@ -41,6 +63,9 @@ function App() {
   };
 
   const handleExport = async () => {
+    const targetIcons = iconsToExport;
+    if (targetIcons.length === 0) return;
+
     try {
       // @ts-expect-error - File System Access API not available in all browsers
       const showDirectoryPicker = window.showDirectoryPicker;
@@ -51,7 +76,7 @@ function App() {
         const dirHandle = await (window as any).showDirectoryPicker();
 
         let count = 0;
-        for (const { name, Component } of filteredIcons) {
+        for (const { name, Component } of targetIcons) {
           const svgString = ReactDOMServer.renderToStaticMarkup(
             <Component
               size={size}
@@ -73,7 +98,7 @@ function App() {
         // Fallback: Use JSZip
         const zip = new JSZip();
 
-        filteredIcons.forEach(({ name, Component }) => {
+        targetIcons.forEach(({ name, Component }) => {
           const svgString = ReactDOMServer.renderToStaticMarkup(
             <Component
               size={size}
@@ -85,7 +110,7 @@ function App() {
 
         const content = await zip.generateAsync({ type: "blob" });
         saveAs(content, "icons.zip");
-        alert(`Exported ${filteredIcons.length} icons to icons.zip!`);
+        alert(`Exported ${targetIcons.length} icons to icons.zip!`);
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
@@ -138,30 +163,54 @@ function App() {
 
         <div className="control-group">
           <label>Actions</label>
-          <button onClick={handleExport} className="export-button">
-            Export SVGs
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <button onClick={handleExport} className="export-button">
+              Export{" "}
+              {selectedIcons.size > 0
+                ? `${selectedIcons.size} Selected`
+                : `All (${iconsToExport.length})`}
+            </button>
+            {selectedIcons.size > 0 && (
+              <button
+                onClick={clearSelection}
+                className="clear-button"
+                title="Clear selection"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="icon-grid">
-        {filteredIcons.map(({ name, Component, category }) => (
-          <div
-            key={name}
-            className="icon-card"
-            onClick={() => copyToClipboard(name)}
-            title="Click to copy component code"
-          >
-            <div className="icon-wrapper">
-              <Component
-                size={size}
-                color={name.includes("Flag") ? undefined : color}
-              />
+        {filteredIcons.map(({ name, Component, category }) => {
+          const isSelected = selectedIcons.has(name);
+          return (
+            <div
+              key={name}
+              className={`icon-card ${isSelected ? "selected" : ""}`}
+              onClick={() => toggleSelection(name)}
+              title="Click to select for export"
+            >
+              <button
+                className="copy-mini-button"
+                onClick={(e) => copyToClipboard(name, e)}
+                title="Copy component code"
+              >
+                Copy
+              </button>
+              <div className="icon-wrapper">
+                <Component
+                  size={size}
+                  color={name.includes("Flag") ? undefined : color}
+                />
+              </div>
+              <div className="icon-name">{name}</div>
+              <div className="icon-category">{category}</div>
             </div>
-            <div className="icon-name">{name}</div>
-            <div className="icon-category">{category}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {filteredIcons.length === 0 && (
