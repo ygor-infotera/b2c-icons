@@ -15,7 +15,6 @@ interface IconMetadata {
   fileName: string;
   slug: string;
   isMulticolor: boolean;
-  isFillable: boolean;
   svgContent: string;
   viewBox: string;
 }
@@ -50,31 +49,101 @@ function extractViewBox(svg: string): string {
   return viewBoxMatch ? viewBoxMatch[1] : "0 0 24 24"; // Default to 24x24
 }
 
+const BLACK_COLORS = new Set(["black", "#000", "#000000"]);
+const WHITE_COLORS = new Set(["white", "#fff", "#ffffff"]);
+
+function isBlackColor(color: string): boolean {
+  return BLACK_COLORS.has(color.toLowerCase().trim());
+}
+
+function isWhiteColor(color: string): boolean {
+  return WHITE_COLORS.has(color.toLowerCase().trim());
+}
+
+/**
+ * Detect whether an SVG uses non-black, non-white colors.
+ * 'monochrome' = only black/white → black becomes target color
+ * 'colored' = has other colors → only those become target color, black/white preserved
+ */
+function detectColorMode(
+  svgContent: string,
+): "monochrome" | "colored" {
+  const attrColorRegex =
+    /\b(?:fill|stroke)\s*=\s*["']([^"']+)["']/gi;
+  let match;
+
+  while ((match = attrColorRegex.exec(svgContent)) !== null) {
+    const color = match[1].trim().toLowerCase();
+    if (color === "none" || color === "currentcolor") continue;
+    if (!isBlackColor(color) && !isWhiteColor(color)) {
+      return "colored";
+    }
+  }
+
+  return "monochrome";
+}
+
+/**
+ * Determine what to do with a color value during extraction.
+ * Returns:
+ *   undefined → strip attribute, element inherits target color from wrapper
+ *   string → explicit attribute value to set
+ */
+function computeNewColor(
+  effectiveColor: string,
+  colorMode: "monochrome" | "colored",
+): string | undefined {
+  const lc = effectiveColor.toLowerCase().trim();
+
+  if (lc === "none") return "none";
+  if (lc === "currentcolor") return undefined;
+
+  if (isWhiteColor(effectiveColor)) return "white";
+
+  if (isBlackColor(effectiveColor)) {
+    // In colored icons, black is structural and should be preserved
+    if (colorMode === "colored") return "black";
+    // In monochrome icons, black becomes target color
+    return undefined;
+  }
+
+  // Any other color → strip → inherits target color from wrapper
+  return undefined;
+}
+
 /**
  * Extract inner SVG content (remove <svg> wrapper)
- * Also strip fill and stroke attributes to allow wrapper control (except for multicolors, multi-color icons, and filled icons)
+ * Processes colors based on icon type:
+ * - Multicolor: preserves all colors, adds stroke="none" to prevent inheritance
+ * - Monochrome (black/white only): strips black (inherits target), preserves white
+ * - Colored (has non-black/non-white): strips those colors (inherits target), preserves black and white
  */
 function extractInnerSVG(
   svg: string,
-  preserveColors: boolean = false,
-  isFilled: boolean = false,
+  isMulticolor: boolean,
 ): string {
-  // Match the content between <svg> tags
   const match = svg.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
   if (!match) {
     return svg;
   }
 
+  // Get parent SVG's fill/stroke for inheritance resolution
+  const svgTag = svg.match(/<svg[^>]*>/)?.[0] || "";
+  const parentFillMatch = svgTag.match(/\bfill\s*=\s*["']([^"']*)["']/);
+  const parentStrokeMatch = svgTag.match(/\bstroke\s*=\s*["']([^"']*)["']/);
+  const parentFill = parentFillMatch ? parentFillMatch[1].trim() : "black";
+  const parentStroke = parentStrokeMatch
+    ? parentStrokeMatch[1].trim()
+    : "none";
+
   let innerContent = match[1].trim();
 
-  // For multicolors, preserve colors exactly as-is but add stroke="none" to prevent parent stroke inheritance
-  if (preserveColors) {
-    // Add stroke="none" to all paths/shapes that don't have a stroke attribute
+  // For multicolor icons, preserve all colors, just add stroke="none" to prevent inheritance
+  if (isMulticolor) {
     innerContent = innerContent.replace(
-      /<(path|circle|rect|ellipse|polygon)([^>]*?)(\/?)>/g,
-      (match, tag, attrs, selfClosing) => {
-        // If no stroke attribute, add stroke="none" to prevent inheritance
-        if (!/stroke\s*=/.test(attrs)) {
+      /<(path|circle|rect|ellipse|polygon|line|polyline)([^>]*?)(\/?)>/g,
+      (fullMatch, tag, attrs, selfClosing) => {
+        if (!/\bstroke\s*=/.test(attrs)) {
           attrs = attrs + ' stroke="none"';
         }
         return `<${tag}${attrs}${selfClosing}>`;
@@ -83,100 +152,43 @@ function extractInnerSVG(
     return innerContent;
   }
 
-  // For "filled" icons, keep explicit fill and stroke attributes but strip colors
-  // This preserves which paths should be filled vs stroked
-  if (isFilled) {
-    // Parse paths and circles to add explicit none attributes for hybrid rendering
-    innerContent = innerContent.replace(
-      /<(path|circle)([^>]*?)(\/?)>/g,
-      (match, tag, attrs, selfClosing) => {
-        const hasFill = /fill="(?!none)[^"]*"/.test(attrs);
-        const hasStroke = /stroke="(?!none)[^"]*"/.test(attrs);
+  const colorMode = detectColorMode(svg);
 
-        // If element has only stroke (no fill), add explicit fill="none"
-        if (hasStroke && !hasFill && !/fill="none"/.test(attrs)) {
-          attrs = attrs + ' fill="none"';
-        }
-        // If element has only fill (no stroke), add explicit stroke="none"
-        else if (hasFill && !hasStroke && !/stroke="none"/.test(attrs)) {
-          attrs = attrs + ' stroke="none"';
-        }
-
-        return `<${tag}${attrs}${selfClosing}>`;
-      },
-    );
-
-    // Strip color values but KEEP fill="none" and stroke="none"
-    innerContent = innerContent
-      .replace(/\s*fill="(?!none)[^"]*"/g, "")
-      .replace(/\s*stroke="(?!none)[^"]*"/g, "");
-
-    return innerContent;
-  }
-
-  // For regular icons, we need to handle hybrid icons (icons with both fill and stroke paths)
-  // Strategy: Add explicit fill="none" or stroke="none" to disambiguate paths, then strip colors
-
-  // Parse paths and add explicit none attributes for hybrid icons
+  // Process each shape element
   innerContent = innerContent.replace(
-    /<path([^>]*?)(\/?)>/g,
-    (match, attrs, selfClosing) => {
-      const hasFill = /fill="(?!none)[^"]*"/.test(attrs);
-      const hasStroke = /stroke="(?!none)[^"]*"/.test(attrs);
+    /<(path|circle|rect|ellipse|polygon|line|polyline)([^>]*?)(\/?)>/g,
+    (fullMatch, tag, attrs, selfClosing) => {
+      // Extract current fill and stroke values
+      const fillMatch = attrs.match(/\bfill\s*=\s*["']([^"']*)["']/);
+      const strokeMatch = attrs.match(/\bstroke\s*=\s*["']([^"']*)["']/);
 
-      // If path has only stroke (no fill), add explicit fill="none"
-      if (hasStroke && !hasFill && !/fill="none"/.test(attrs)) {
-        attrs = attrs + ' fill="none"';
-      }
-      // If path has only fill (no stroke), add explicit stroke="none"
-      else if (hasFill && !hasStroke && !/stroke="none"/.test(attrs)) {
-        attrs = attrs + ' stroke="none"';
-      }
+      const fillValue = fillMatch ? fillMatch[1].trim() : null;
+      const strokeValue = strokeMatch ? strokeMatch[1].trim() : null;
 
-      return `<path${attrs}${selfClosing}>`;
+      // Resolve effective values considering parent SVG inheritance
+      const effectiveFill = fillValue !== null ? fillValue : parentFill;
+      const effectiveStroke =
+        strokeValue !== null ? strokeValue : parentStroke;
+
+      // Strip existing fill and stroke color attributes
+      let newAttrs = attrs
+        .replace(/\s*\bfill\s*=\s*["'][^"']*["']/g, "")
+        .replace(/\s*\bstroke\s*=\s*["'][^"']*["']/g, "");
+
+      // Compute new fill and stroke
+      const newFill = computeNewColor(effectiveFill, colorMode);
+      const newStroke = computeNewColor(effectiveStroke, colorMode);
+
+      if (newFill !== undefined) newAttrs += ` fill="${newFill}"`;
+      if (newStroke !== undefined) newAttrs += ` stroke="${newStroke}"`;
+
+      return `<${tag}${newAttrs}${selfClosing}>`;
     },
   );
-
-  // Now strip color values, keeping fill="none" and stroke="none"
-  innerContent = innerContent
-    .replace(/\s*fill="(?!none)[^"]*"/g, "") // Remove fill="#fff" etc, keep fill="none"
-    .replace(/\s*stroke="(?!none)[^"]*"/g, "") // Remove stroke="#000" etc, keep stroke="none"
-    .replace(/\s*stroke-width="[^"]*"/g, ""); // Remove stroke-width="2" etc
 
   return innerContent;
 }
 
-/**
- * Detect if SVG uses fill colors (not just stroke)
- * Most icons with fill attributes should be fillable
- * Multicolors should preserve their multi-color nature
- * Filled icons (with "filled" in name) ARE fillable - they're hybrid icons needing both fill and stroke
- */
-function detectFillable(
-  svgContent: string,
-  isMulticolor: boolean,
-  isFilled: boolean,
-): boolean {
-  // Multicolors should preserve colors, so they're fillable but handled specially
-  if (isMulticolor) {
-    return true;
-  }
-
-  // "Filled" icons ARE fillable - they're hybrid icons that need both fill and stroke set to color
-  // This allows paths with fill="none" to use stroke, and paths with stroke="none" to use fill
-  if (isFilled) {
-    return true;
-  }
-
-  // Check if SVG has fill attributes with actual colors (not "none")
-  const hasFillColor = /fill\s*=\s*["'](?!none)([^"']+)["']/i.test(svgContent);
-
-  // Also check for style attributes with fill
-  const hasStyleFill =
-    /style\s*=\s*["'][^"']*fill\s*:\s*(?!none)([^;"']+)/i.test(svgContent);
-
-  return hasFillColor || hasStyleFill;
-}
 
 /**
  * Generate component file content
@@ -184,14 +196,14 @@ function detectFillable(
 function generateComponentCode(
   componentName: string,
   svgContent: string,
-  fillable: boolean,
+  isMulticolor: boolean,
   viewBox: string,
 ): string {
   return `import { createIcon } from '../Icon';
 
 const svgContent = \`${svgContent}\`;
 
-export const ${componentName} = createIcon('${componentName}', svgContent, ${fillable}, '${viewBox}');
+export const ${componentName} = createIcon('${componentName}', svgContent, ${isMulticolor}, '${viewBox}');
 `;
 }
 
@@ -256,27 +268,15 @@ async function generateReactIcons() {
       console.warn(`⚠️  SVGO optimization failed for ${icon}, using original`);
     }
 
-    // Check if this is a "filled" icon (icons with "filled" in the name)
-    const isFilled = slug.includes("-filled") && !isMulticolor;
-
     // Extract viewBox and inner SVG content
     const viewBox = extractViewBox(optimizedContent);
-    // Preserve colors for multicolors
-    const preserveColors = isMulticolor;
-    const innerContent = extractInnerSVG(
-      optimizedContent,
-      preserveColors,
-      isFilled,
-    );
-
-    const isFillable = detectFillable(svgContent, isMulticolor, isFilled);
+    const innerContent = extractInnerSVG(optimizedContent, isMulticolor);
 
     iconMetadata.push({
       componentName,
       fileName: icon,
       slug,
       isMulticolor,
-      isFillable,
       svgContent: innerContent,
       viewBox,
     });
@@ -285,7 +285,7 @@ async function generateReactIcons() {
     const componentCode = generateComponentCode(
       componentName,
       innerContent,
-      isFillable,
+      isMulticolor,
       viewBox,
     );
 
@@ -307,13 +307,7 @@ async function generateReactIcons() {
     const componentPath = path.join(OUTPUT_DIR, `${componentName}.tsx`);
     fs.writeFileSync(componentPath, formattedCode);
 
-    const typeLabel = isMulticolor
-      ? "(multicolor)"
-      : isFilled
-        ? "(filled)"
-        : isFillable
-          ? "(fillable)"
-          : "(stroke)";
+    const typeLabel = isMulticolor ? "(multicolor)" : "(standard)";
     console.log(`✅ Generated ${componentName}.tsx ${typeLabel}`);
   }
 
@@ -346,15 +340,13 @@ async function generateReactIcons() {
   console.log("✨ React icon generation complete!\n");
 
   // Print summary
-  const fillableCount = iconMetadata.filter((m) => m.isFillable).length;
-  const strokeCount = iconMetadata.length - fillableCount;
   const multicolorCount = iconMetadata.filter((m) => m.isMulticolor).length;
+  const standardCount = iconMetadata.length - multicolorCount;
 
   console.log("📊 Summary:");
   console.log(`   Total icons: ${iconMetadata.length}`);
-  console.log(`   Fillable: ${fillableCount}`);
-  console.log(`   Stroke: ${strokeCount}`);
-  console.log(`   Multicolors: ${multicolorCount}`);
+  console.log(`   Standard: ${standardCount}`);
+  console.log(`   Multicolor: ${multicolorCount}`);
 }
 
 // Run the generator

@@ -8,7 +8,7 @@ export interface IconProps extends React.ComponentPropsWithoutRef<"svg"> {
 export function createIcon(
   name: string,
   svgContent: string,
-  isFillable: boolean,
+  isMulticolor: boolean,
   viewBox: string = "0 0 24 24",
 ) {
   const Icon = ({ size = 24, color = "currentColor", ...props }: IconProps) => {
@@ -17,8 +17,8 @@ export function createIcon(
         width={size}
         height={size}
         viewBox={viewBox}
-        fill={isFillable ? color : "none"}
-        stroke={!isFillable ? color : "none"}
+        fill={isMulticolor ? "none" : color}
+        stroke={isMulticolor ? "none" : color}
         xmlns="http://www.w3.org/2000/svg"
         dangerouslySetInnerHTML={{ __html: svgContent }}
         {...props}
