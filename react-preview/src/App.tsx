@@ -1,18 +1,68 @@
 import { saveAs } from "file-saver";
 import * as Icons from "infotravel-icons";
 import JSZip from "jszip";
-import { useMemo, useState } from "react";
+import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 import ReactDOMServer from "react-dom/server";
 import "./App.css";
 
+// Memoized IconCard to prevent unnecessary re-renders of the entire grid
+const IconCard = memo(
+  ({
+    name,
+    Component,
+    category,
+    isSelected,
+    onToggle,
+    onCopy,
+  }: {
+    name: string;
+    Component: React.ComponentType<Icons.IconProps>;
+    category: string;
+    isSelected: boolean;
+    onToggle: (name: string) => void;
+    onCopy: (name: string, event: React.MouseEvent) => void;
+  }) => {
+    return (
+      <div
+        className={`icon-card ${isSelected ? "selected" : ""}`}
+        onClick={() => onToggle(name)}
+        title="Click to select for export"
+      >
+        <button
+          className="copy-mini-button"
+          onClick={(e) => onCopy(name, e)}
+          title="Copy component code"
+        >
+          Copy
+        </button>
+        <div className="icon-wrapper">
+          <Component />
+        </div>
+        <div className="icon-name">{name}</div>
+        <div className="icon-category">{category}</div>
+      </div>
+    );
+  },
+);
+
+IconCard.displayName = "IconCard";
+
+const INITIAL_SIZE = 32;
+const INITIAL_COLOR = "#60a5fa";
+
 function App() {
   const [search, setSearch] = useState("");
-  const [size, setSize] = useState(32);
-  const [color, setColor] = useState("#60a5fa");
   const [showToast, setShowToast] = useState(false);
   const [copiedName, setCopiedName] = useState("");
-
   const [selectedIcons, setSelectedIcons] = useState<Set<string>>(new Set());
+
+  // Refs for zero-rerender updates
+  const containerRef = useRef<HTMLDivElement>(null);
+  const sizeLabelRef = useRef<HTMLLabelElement>(null);
+
+  // Storage for values to avoid reading from state (which would require re-renders)
+  const colorRef = useRef(INITIAL_COLOR);
+  const sizeRef = useRef(INITIAL_SIZE);
 
   const allIcons = useMemo(() => {
     return Object.entries(Icons)
@@ -39,7 +89,7 @@ function App() {
     return allIcons.filter((icon) => selectedIcons.has(icon.name));
   }, [allIcons, filteredIcons, selectedIcons]);
 
-  const toggleSelection = (name: string) => {
+  const toggleSelection = useCallback((name: string) => {
     setSelectedIcons((prev) => {
       const next = new Set(prev);
       if (next.has(name)) {
@@ -49,18 +99,22 @@ function App() {
       }
       return next;
     });
-  };
+  }, []);
 
   const clearSelection = () => setSelectedIcons(new Set());
 
-  const copyToClipboard = (name: string, event?: React.MouseEvent) => {
-    if (event) event.stopPropagation();
-    const text = `<${name} size={${size}} color="${color}" />`;
-    navigator.clipboard.writeText(text);
-    setCopiedName(name);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 2000);
-  };
+  const copyToClipboard = useCallback(
+    (name: string, event?: React.MouseEvent) => {
+      if (event) event.stopPropagation();
+      // Read current values directly from Refs for the code snippet
+      const text = `<${name} size={${sizeRef.current}} color="${colorRef.current}" />`;
+      navigator.clipboard.writeText(text);
+      setCopiedName(name);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    },
+    [], // Zero dependencies means this callback NEVER changes
+  );
 
   const handleExport = async () => {
     const targetIcons = iconsToExport;
@@ -71,7 +125,6 @@ function App() {
       const showDirectoryPicker = window.showDirectoryPicker;
 
       if (typeof showDirectoryPicker === "function") {
-        // Use File System Access API
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dirHandle = await (window as any).showDirectoryPicker();
 
@@ -79,8 +132,8 @@ function App() {
         for (const { name, Component } of targetIcons) {
           const svgString = ReactDOMServer.renderToStaticMarkup(
             <Component
-              size={size}
-              color={name.includes("Flag") ? undefined : color}
+              size={sizeRef.current}
+              color={name.includes("Flag") ? undefined : colorRef.current}
             />,
           );
 
@@ -95,14 +148,13 @@ function App() {
 
         alert(`Exported ${count} icons to ${dirHandle.name}!`);
       } else {
-        // Fallback: Use JSZip
         const zip = new JSZip();
 
         targetIcons.forEach(({ name, Component }) => {
           const svgString = ReactDOMServer.renderToStaticMarkup(
             <Component
-              size={size}
-              color={name.includes("Flag") ? undefined : color}
+              size={sizeRef.current}
+              color={name.includes("Flag") ? undefined : colorRef.current}
             />,
           );
           zip.file(`${name}.svg`, svgString);
@@ -120,8 +172,31 @@ function App() {
     }
   };
 
+  // Immediate visual feedback bypassed through DOM refs - NO React re-renders!
+  const handleColorInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const val = e.currentTarget.value;
+    colorRef.current = val;
+    if (containerRef.current) {
+      containerRef.current.style.setProperty("--icon-preview-color", val);
+    }
+  };
+
+  const handleSizeInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const val = e.currentTarget.value;
+    sizeRef.current = Number(val);
+    if (containerRef.current) {
+      containerRef.current.style.setProperty("--icon-preview-size", `${val}px`);
+    }
+    if (sizeLabelRef.current) {
+      sizeLabelRef.current.innerText = `Size: ${val}px`;
+    }
+  };
+
+  // Sync state only when interaction ends - REMOVED to keep it buttery smooth
+  // We use Refs only to avoid any React re-render cycle during visual changes
+
   return (
-    <div className="preview-container">
+    <div className="preview-container" ref={containerRef}>
       <header>
         <h1>Infotravel Icons</h1>
         <p>Premium React icon library for travel applications.</p>
@@ -140,13 +215,13 @@ function App() {
         </div>
 
         <div className="control-group">
-          <label>Size: {size}px</label>
+          <label ref={sizeLabelRef}>Size: {INITIAL_SIZE}px</label>
           <input
             type="range"
             min="16"
             max="128"
-            value={size}
-            onChange={(e) => setSize(Number(e.target.value))}
+            defaultValue={INITIAL_SIZE}
+            onInput={handleSizeInput}
             className="range-input"
           />
         </div>
@@ -155,8 +230,8 @@ function App() {
           <label>Color</label>
           <input
             type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
+            defaultValue={INITIAL_COLOR}
+            onInput={handleColorInput}
             className="color-input"
           />
         </div>
@@ -184,33 +259,17 @@ function App() {
       </div>
 
       <div className="icon-grid">
-        {filteredIcons.map(({ name, Component, category }) => {
-          const isSelected = selectedIcons.has(name);
-          return (
-            <div
-              key={name}
-              className={`icon-card ${isSelected ? "selected" : ""}`}
-              onClick={() => toggleSelection(name)}
-              title="Click to select for export"
-            >
-              <button
-                className="copy-mini-button"
-                onClick={(e) => copyToClipboard(name, e)}
-                title="Copy component code"
-              >
-                Copy
-              </button>
-              <div className="icon-wrapper">
-                <Component
-                  size={size}
-                  color={name.includes("Flag") ? undefined : color}
-                />
-              </div>
-              <div className="icon-name">{name}</div>
-              <div className="icon-category">{category}</div>
-            </div>
-          );
-        })}
+        {filteredIcons.map(({ name, Component, category }) => (
+          <IconCard
+            key={name}
+            name={name}
+            Component={Component}
+            category={category}
+            isSelected={selectedIcons.has(name)}
+            onToggle={toggleSelection}
+            onCopy={copyToClipboard}
+          />
+        ))}
       </div>
 
       {filteredIcons.length === 0 && (

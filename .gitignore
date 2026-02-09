@@ -32,4 +32,6 @@ dist/
 src/icons/
 broken-icons/
 broken-icons.zip
+filled-icons-working/
+filled-icons-working.zip
 src/index.ts

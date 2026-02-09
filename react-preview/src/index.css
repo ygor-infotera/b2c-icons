@@ -11,6 +11,8 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --icon-preview-color: #60a5fa;
+  --icon-preview-size: 32px;
 }
 
 body {
@@ -149,6 +151,14 @@ header p {
   align-items: center;
   justify-content: center;
   transition: transform 0.2s;
+  color: var(--icon-preview-color);
+  width: var(--icon-preview-size);
+  height: var(--icon-preview-size);
+}
+
+.icon-wrapper svg {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .icon-card:hover .icon-wrapper {
